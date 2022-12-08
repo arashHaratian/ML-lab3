@@ -222,8 +222,8 @@ plot(tr, cex = 2)
 points(te, col = "blue", cex = 1)
 points(te[, 1], predict(nn_h1, te), col = "red", cex = 1)
 
-#TODO
-h2 <- function(x) x / (1 + exp(-2 * 10000 * x))
+  
+h2 <- function(x) ifelse(x >= 0, x, 0)
 nn_h2 <- neuralnet(Sin~Var,
                    tr,
                    10,
