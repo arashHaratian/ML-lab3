@@ -1,0 +1,238 @@
+---
+title: "Lab3-assignment 2"
+author: "Arash Haratian"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+## Assignment 2
+The aim of this assignment was to train and evaluate 4 different support vector machine (SVM) models with different partitions of the data as the training and test dataset. All 4 models use Gaussian (or radial basis function) kernel where $\sigma = 0.05$  . 
+
+First, the data has been divided to 4 different partitions:
+
+- *train data (`tr`)*: containing the first 3000 observations
+- *validation data (`va`)*: containing observations from 3001 to 3800
+- *train + validation data (`trva`)*: containing first 3800 observations
+- *test data (`te`)*: containing observations from 3801 to 4601
+
+To find the best value of regularization parameter (`C`), a series of candidate values are used to train a SVM on the train data, then the misclassification error rate on the validation data has been computed. The best value of `C` is the candidate value that has the lowest misclassification error rate.
+
+Now, by having value of `C` and `sigma`, four different SVM models are trained. The following table shows which partitions are used to train and evaluate each model:
+
+The model (`name`)  | training partition | evaluating partition
+------------------- | ------------------ | ----------------------
+First model (`filter0`) |train data (`tr`) | validation data (`va`)
+Second model (`filter1`)|train data (`tr`) | test data (`te`)
+Third model (`filter2`) | train + validation data (`trva`) | test data (`te`)
+Forth model (`filter3`) | full data (`spam`)   | test data (`te`)
+
+
+```{r}
+library(kernlab)
+set.seed(1234567890)
+
+data(spam)
+foo <- sample(nrow(spam))
+spam <- spam[foo, ]
+spam[, -58] <- scale(spam[, -58])
+tr <- spam[1:3000, ]
+va <- spam[3001:3800, ]
+trva <- spam[1:3800, ]
+te <- spam[3801:4601, ] 
+
+by <- 0.3
+err_va <- NULL
+for(i in seq(by ,5, by)){
+  filter <- ksvm(type ~ ., data = tr, kernel = "rbfdot", kpar = list(sigma = 0.05), C = i, scaled = FALSE)
+  mailtype <- predict(filter, va[, -58])
+  t <- table(mailtype, va[, 58])
+  err_va <- c(err_va, (t[1, 2] + t[2, 1]) / sum(t))
+}
+
+filter0 <- ksvm(type ~ ., data = tr, kernel = "rbfdot", kpar = list(sigma = 0.05), 
+                C = which.min(err_va) * by,
+                scaled = FALSE)
+mailtype <- predict(filter0, va[, -58])
+t <- table(mailtype, va[, 58])
+err0 <- (t[1, 2] + t[2, 1]) / sum(t)
+# err0
+
+filter1 <- ksvm(type ~ ., data = tr, kernel = "rbfdot", kpar = list(sigma = 0.05),
+                C = which.min(err_va) * by,
+                scaled = FALSE)
+mailtype <- predict(filter1, te[, -58])
+t <- table(mailtype, te[, 58])
+err1 <- (t[1, 2] + t[2, 1]) / sum(t)
+# err1
+
+filter2 <- ksvm(type ~ ., data = trva, kernel = "rbfdot", kpar = list(sigma = 0.05), 
+                C = which.min(err_va) * by,
+                scaled = FALSE)
+mailtype <- predict(filter2, te[, -58])
+t <- table(mailtype, te[, 58])
+err2 <- (t[1, 2] + t[2, 1]) / sum(t)
+# err2
+
+filter3 <- ksvm(type ~ ., data = spam, kernel = "rbfdot", kpar = list(sigma = 0.05),
+                C = which.min(err_va) * by,
+                scaled = FALSE)
+mailtype <- predict(filter3, te[, -58])
+t <- table(mailtype, te[, 58])
+err3 <- (t[1, 2] + t[2, 1]) / sum(t)
+# err3
+```
+
+In the following Table the error rates are listed:
+
+The model (`name`)  | error rate
+------------------- | ---------------
+First model (`filter0`) | `r err0`
+Second model (`filter1`)| `r err1`
+Third model (`filter2`) | `r err2`
+Forth model (`filter3`) | `r err3`
+
+
+### Question 2.1
+The best model to use for future prediction is Forth model (`filter3`). The reason is that, by finding the optimal value of `C`, now the final model can be trained using the full dataset, as it is best way to make sure that the model is generalized better.
+
+### Question 2.2
+The correct error value that estimates the generalization error more correctly is the error from the the third model (`err2`).
+
+`err0` is biased and it underestimates the real generalization error as the partition that is used to calculate the error rate is the same partition that has been used to find the best value of regularization parameter `C`.
+`err3` underestimates the real generalization error too, as the test data is already used to train the model. When the partition that is used to calculate the error rate is already used in the training, the the error is not the unbiased estimate of real generalization error. It worth to note that the value of `err3` is even smaller that `err0`.
+
+To choose between `err1` and `err2`, the `err2` is more acceptable choice as the training partition for third model (`filter2`) has more observations compare to second model (`filter1`), so the model has generalized better and its error rate is more unbiased.
+
+
+
+### Question 2.3
+
+For predicting class of the new data point $x_*$, the following formula should be used:
+
+$$
+\hat{y}(x_*) = \sum_{i = 1}^{n} \hat{\alpha}_i * K(x_i, x_*) 
+$$
+Where $\hat{\alpha}$ is the linear coefficients for the support vectors, $x_i$ the i-th observation of the support vector and  $n$ is equal to the length of the support vector. The prediction of the 10 top rows of the full dataset is as follow:
+
+```{r}
+sv <- alphaindex(filter3)[[1]]
+co <- coef(filter3)[[1]]
+inte <- -b(filter3)
+
+important_obs <- spam[sv, -58]
+sv_mat <- as.matrix(important_obs)
+
+result <- vector("numeric", 10)
+for(i in 1:10){
+  x_star <- unname(unlist(spam[i, -58]))
+  dist <- colSums((x_star - t(sv_mat))^2)
+  k <- exp(-dist * 0.05)
+  result[i] <- sum(k*co) + inte
+}
+knitr::kable(data.frame("manual_predictions" = result, "predict_function" = predict(filter3,spam[1:10,-58], type = "decision")))
+```
+
+Furthermore, to predict the class of each observation, one can use the $\hat{g}(x_*) = sign(\hat{y}(x_*))$.
+
+
+## Appendix
+
+```{r, echo=TRUE, eval=FALSE}
+library(kernlab)
+set.seed(1234567890)
+
+data(spam)
+foo <- sample(nrow(spam))
+spam <- spam[foo, ]
+spam[, -58] <- scale(spam[, -58])
+tr <- spam[1:3000, ]
+va <- spam[3001:3800, ]
+trva <- spam[1:3800, ]
+te <- spam[3801:4601, ] 
+
+by <- 0.3
+err_va <- NULL
+for(i in seq(by ,5, by)){
+  filter <- ksvm(type ~ ., data = tr, kernel = "rbfdot", kpar = list(sigma = 0.05), C = i, scaled = FALSE)
+  mailtype <- predict(filter, va[, -58])
+  t <- table(mailtype, va[, 58])
+  err_va <- c(err_va, (t[1, 2] + t[2, 1]) / sum(t))
+}
+
+filter0 <- ksvm(type ~ ., data = tr, kernel = "rbfdot", kpar = list(sigma = 0.05), 
+                C = which.min(err_va) * by,
+                scaled = FALSE)
+mailtype <- predict(filter0, va[, -58])
+t <- table(mailtype, va[, 58])
+err0 <- (t[1, 2] + t[2, 1]) / sum(t)
+err0
+
+filter1 <- ksvm(type ~ ., data = tr, kernel = "rbfdot", kpar = list(sigma = 0.05),
+                C = which.min(err_va) * by,
+                scaled = FALSE)
+mailtype <- predict(filter1, te[, -58])
+t <- table(mailtype, te[, 58])
+err1 <- (t[1, 2] + t[2, 1]) / sum(t)
+err1
+
+filter2 <- ksvm(type ~ ., data = trva, kernel = "rbfdot", kpar = list(sigma = 0.05), 
+                C = which.min(err_va) * by,
+                scaled = FALSE)
+mailtype <- predict(filter2, te[, -58])
+t <- table(mailtype, te[, 58])
+err2 <- (t[1, 2] + t[2, 1]) / sum(t)
+err2
+
+filter3 <- ksvm(type ~ ., data = spam, kernel = "rbfdot", kpar = list(sigma = 0.05),
+                C = which.min(err_va) * by,
+                scaled = FALSE)
+mailtype <- predict(filter3, te[, -58])
+t <- table(mailtype, te[, 58])
+err3 <- (t[1, 2] + t[2, 1]) / sum(t)
+err3
+
+sv <- alphaindex(filter3)[[1]]
+co <- coef(filter3)[[1]]
+inte <- -b(filter3)
+
+k <- NULL
+for (i in 1:10) {
+  # We produce predictions for just the first 10 points in the dataset.
+  x_star <- spam[i, -58]
+  k2 <- NULL
+  for (j in 1:length(sv)) {
+    k2 <- c(k2,
+            exp( -0.05 * sum( (x_star - spam[sv[j], -58])^2 ) )
+    )
+  }
+  
+  k <- c(k, sum(co * k2) + inte)
+}
+k
+predict(filter3,spam[1:10,-58], type = "decision")
+
+# the vectorized version
+
+sv <- alphaindex(filter3)[[1]]
+co <- coef(filter3)[[1]]
+inte <- -b(filter3)
+
+important_obs <- spam[sv, -58]
+sv_mat <- as.matrix(important_obs)
+
+result <- vector("numeric", 10)
+for(i in 1:10){
+  x_star <- unname(unlist(spam[i, -58]))
+  dist <- colSums((x_star - t(sv_mat))^2)
+  k <- exp(-dist * 0.05)
+  result[i] <- sum(k*co) + inte
+}
+
+knitr::kable(data.frame("manual_predictions" = result, "predict_function" = predict(filter3,spam[1:10,-58], type = "decision")))
+```
+
