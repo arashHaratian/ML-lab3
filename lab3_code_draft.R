@@ -196,6 +196,7 @@ winit <- runif(31, -1, 1)
 nn <- neuralnet(Sin~Var,
                 tr,
                 10,
+                threshold = 0.1,
                 startweights = winit)
 # Plot of the training data (black), test data (blue), and predictions (red)
 plot(tr, cex = 2)
@@ -249,11 +250,33 @@ points(te[, 1], predict(nn_h3, te), col = "red", cex = 1)
 ## 3.3 -------
 new_x <- runif(500, 0, 50)
 new_df <- data.frame(Var = new_x, Sin = sin(new_x))
-predict(nn, new_df)
+tail(predict(nn, new_df))
 
 plot(new_df[, 1], predict(nn, new_df), col = "red", cex = 1)
 points(new_df, col = "blue", cex = 1)
+nn$weights
 
+w1 <- nn$weights[[1]][[1]][2,]
+b1 <- nn$weights[[1]][[1]][1,]
+w2 <- nn$weights[[1]][[2]][2:11,]
+b2 <- nn$weights[[1]][[2]][1,]
+
+w1
+b1
+
+# SUMMARY:  z1<0 => exp(-z1) goes to infinity => q1 goes to zero
+# SUMMARY:  z1>0 => exp(-z1) goes to zero => q1 goes to one
+# SUMMARY: the sign of z1 is defined by the sign of w1, so: sum(w2[which(w1>0)]) + b2
+
+z1 <- (50 * w1 + b1)
+q1 <- 1/(1+ exp(-z1)) 
+plot(q1)
+which(round(q1) == 1)
+which(w1>0)
+sum(q1*w2) + b2
+sum(w2[which(round(q1) == 1)]) +b2
+sum(w2[which(w1>0)]) +b2
+predict(nn, data.frame(50))
 ## 3.4 -------
 nn$weights
 plot(nn)
