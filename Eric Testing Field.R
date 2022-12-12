@@ -108,7 +108,8 @@ for(i in seq_along(hours)){
 # hours[11] <- "24:00:00"
 library(ggplot2)# Not sure if we can use ggplot
 temperature_sum <- data.frame(cbind(hours,temperature_sum))
-temperature_sum[11,1] <- "24:00:00"
+temperature_sum[11,1] <- "24:00:00"# change the title so the ploting will have 2400 at the right hand side
+
 plotdata <- data.frame(cbind(temperature_sum,temperature_multiply))
 ggplot(data =plotdata)+
   geom_line(aes(x=hours,y=as.numeric(temperature_sum),group=1,colour="Summation"))+

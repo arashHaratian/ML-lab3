@@ -1,0 +1,145 @@
+---
+title: "Q1"
+author: "Yi Hung Chen"
+date: "2022-12-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(out.width = "75%")
+knitr::opts_chunk$set(fig.align = "center")
+library(geosphere)
+```
+
+## Assignment 1
+In this assignment, kernel method is being preformed to predict the hourly temperatures for a certian date and place in Sweden. Two data files (stations.csv and temps50k.csv) are given which should be combined according to "station_number".
+
+```{r echo=FALSE}
+set.seed(1234567890)
+stations <- read.csv("./stations.csv", fileEncoding = "latin1")
+temps50k <- read.csv("./temps50k.csv")
+
+data_full <- merge(stations, temps50k, by = "station_number")
+
+#choose target location 
+set.seed(1378)
+target_station <- 84260
+target_loc <- stations[stations$station_number == target_station, c("longitude", "latitude")]
+target_data <- data_full[data_full == target_station, ]
+target_date <- "2013-11-04"
+
+hours <- seq(as.POSIXct("2013-11-04 04:00"), as.POSIXct("2013-11-04 24:00"), by = "2 hour")
+hours <- format(hours, format = "%H:%M:%S")
+#find the max physical difference between the target station and the other station
+max_distance <- max(distHaversine(target_loc, data_full[,  c("longitude", "latitude")]))/1000 
+
+#gives the maximum date difference to "previous date"
+max_date_diff <- max(as.vector(difftime(target_date,data_full$date, units = "day")))
+```
+
+Three different Gaussian kernels are being used in this assignment:  
+1. The physical distance from a station to the point of interest. For this purpose, use the function distHaversine from the R package geosphere.
+2. The distance between the day a temperature measurement
+was made and the day of interest.
+3. The distance between the hour of the day a temperature measurement was made and the hour of interest.  
+
+TO begin with, the first task is to choose an appropriate smoothing coefficient or width for each of the three kernels above and combined a kernel by the sum of those three different Gaussian kernels.
+Since no cross-validation should be used so the width are manually chosen to have larger kernel vaules closer to the target point and vice versa. Below are the plots showing the kernel value as a function of distance. The values are chosen by following reason:  
+
+1. Kernel width of physical distance(h_distance=50000), which means 50 km. This is to gives larger kernel value to near by stations. As Figure 1 shown below, if the data is from any station located more than 100km away from the target location, the data will not affect the prediction much. Note: In Figure 1, only kernel values within 200km are presented. As the true maximum distance to the target station ( `r max_distance`km) is way to far and the kernel value is already small after 100km.
+  
+2. Kernel width of date difference(h_date <- 132.5), which means half a year. This is to gives larger kernel value to the observation within same year, especially for the month that is within half year difference to the target date. As Figure 2 shown below, as the date difference approach 500 days the kernel value become very small. Note: In Figure 2, only kernel values within 1500 days are presented. As the true maximum date difference to the target date ( `r max_date_diff` days) is way to high and the kernel value is already small after 500 days.
+
+3. Kernel width of hour difference(h_time <- 6), which means 6 hours. This will gives larger kernel value to the observation within 6 hours, and lower kernel value for more than 12 hours difference. This is to account for the difference of day time and night time.
+
+```{r , echo=F}
+# Check if the weight is suitable for our application
+h_distance <- 50000 ; h_date <- 132.5; h_time <- 6
+distance <- seq(0,max_distance,1)/h_distance
+k_dist <- exp(-(distance)^2)
+
+plot(k_dist, type = "l", xlab = "Phycical Distance", ylab = "kernel",xlim=c(0,200000),main="Figure 1: Kernal value with respect to physical distance")
+# Since some of the other stations are too far away, limit the ploting x-value to make observation easier
+
+
+# kernel of date
+max_date_diff <- max(as.vector(difftime(target_date,data_full$date, units = "day"))) 
+
+#Here, calculate the max/min difference of date with target date, this doesn't account for season since we only calculate the true difference of the date-
+date <- seq(0,max_date_diff,1)/h_date
+k_date <- exp(-(date)^2)
+plot(k_date, type= "l", xlab= "Date", ylab = "kernel",xlim=c(0,1500),main="Kernal value with respect to date distance") # we only present t closest 2000 day, since the day that is before that has too little affect to the vaule, which is also what we want
+
+
+# kernel of time
+time <- seq(0,24,1)/h_time
+k_time <- exp(-(time)^2)
+plot(k_time, xlab = "Time", ylab = "kernel",xlim=c(0,24), type = "l",main="Kernal value with respect to hour distance")
+```
+  
+Now, with the kernels width being set. The next step is combining three Guassian kernels by the sum of them and make prediction. Importantly, because the data includes measurements that are posterior to the day and hour of the target time. Filtering must be done before prediction being made.
+
+```{r , echo=F}
+#Summation Kernel
+i <- 1
+temperature_sum <- vector(length = length(hours))
+for(i in seq_along(hours)){
+  #filter posterior data
+  available_data <- data_full[(
+    data_full$time <= hours[i] &
+      data_full$date <= target_date
+  ), ]
+  
+  physcial_distance <- distHaversine(target_loc, available_data[,  c("longitude", "latitude")])
+  date_distance <- difftime(target_date, available_data$date, units = "day")
+  hour_distance <- difftime(as.POSIXct(hours[i], format = "%H:%M:%S"),
+                     as.POSIXct(available_data$time, format = "%H:%M:%S"),
+                     units = "hour")
+  
+  weight <- exp(-(physcial_distance/h_distance)^2) + exp(-(as.numeric(date_distance)/h_date)^2) + exp((-as.numeric(hour_distance)/h_time)^2)
+  # weight <- exp(-physcial_distance/h_distance) + exp(-as.numeric(date_distance)/h_date) + exp(-as.numeric(hour_distance)/h_time)
+  temperature_sum[i] <- sum(available_data$air_temperature * weight) / sum(weight)
+}
+
+#Multiplying Kernel
+
+temperature_multiply <- vector(length = length(hours))
+for(i in seq_along(hours)){
+  available_data <- data_full[(
+    # data_full$station_number != target_station &
+    data_full$time <= hours[i] &
+      data_full$date <= target_date
+  ), ]
+  
+  physcial_distance <- distHaversine(target_loc, available_data[,  c("longitude", "latitude")])
+  
+  
+  
+  date_distance <- difftime(target_date, available_data$date, units = "day")
+  hour_distance <- difftime(as.POSIXct(hours[i], format = "%H:%M:%S"),
+                     as.POSIXct(available_data$time, format = "%H:%M:%S"),
+                     units = "hour")
+  
+  weight <- exp(-(physcial_distance/h_distance)^2) * exp(-(as.numeric(date_distance)/h_date)^2) * exp(-(as.numeric(hour_distance)/h_time)^2)
+  # weight <- exp(-physcial_distance/h_distance) * exp(-as.numeric(date_distance)/h_date) * exp(-as.numeric(hour_distance)/h_time)
+  temperature_multiply[i] <- sum(available_data$air_temperature * weight) / sum(weight)
+}
+
+
+# hours[11] <- "24:00:00"
+library(ggplot2)# Not sure if we can use ggplot
+temperature_sum <- data.frame(cbind(hours,temperature_sum))
+temperature_sum[11,1] <- "24:00:00"# change the title so the ploting will have 2400 at the right hand side
+
+plotdata <- data.frame(cbind(temperature_sum,temperature_multiply))
+ggplot(data =plotdata)+
+  geom_line(aes(x=hours,y=as.numeric(temperature_sum),group=1,colour="Summation"))+
+  geom_line(aes(x=hours,y=as.numeric(temperature_multiply),group=1 ,colour="Multiplying"))+
+  scale_color_manual(name = "Y series", values = c("Summation" = "darkblue", "Multiplying" = "red"))+
+  ylab("Temperature")+
+  ggtitle("Comparesion of Sumatinon and Multiplying kernels")
+  
+```
+
+
