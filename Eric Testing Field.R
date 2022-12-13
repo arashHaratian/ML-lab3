@@ -48,7 +48,7 @@ plot(k_date, type= "l", xlab= "Date", ylab = "kernel",xlim=c(0,1500)) # we only 
 
 
 # kernel of time
-time <- seq(0,24,1)/h_time
+time <- seq(-12,12,1)/h_time
 k_time <- exp(-(time)^2)
 plot(k_time, xlab = "Time", ylab = "kernel",xlim=c(0,24), type = "l")
 

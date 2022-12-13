@@ -83,3 +83,4 @@ for(i in seq_along(hours)){
 
 
 plot(temp, type="o")
+
